@@ -1,0 +1,42 @@
+# 1. 의존성 및 외부 라이브러리 (대용량 무조건 제외)
+node_modules/
+jspm_packages/
+web_modules/
+
+# 2. 빌드 결과물 및 배포용 폴더
+dist/
+build/
+.next/
+.nuxt/
+out/
+.docusaurus/
+
+# 3. 환경 변수 및 비밀 키 (보안 필수!)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# 4. 에디터 및 OS 임시 파일
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 5. 로그 및 캐시 파일
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+.parcel-cache
+.turbo/
+
+# 6. 원본 PDF 및 추출 임시 캐시 제외
+*.pdf
+scripts/pdf-lines.json
+scripts/*.txt
+scripts/unmatched-en.json
