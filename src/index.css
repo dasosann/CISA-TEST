@@ -41,7 +41,7 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button, input, select {
+button, input, select, textarea {
   font-family: inherit;
 }
 
@@ -672,4 +672,55 @@ button, input, select {
   background: #fff1f2;
   border-color: #fecdd3;
   color: #e11d48;
+}
+
+/* Wrong Answer Reason / Memo Box */
+.wrong-reason-box {
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--radius-md);
+  background: #fffbeb;
+  border: 1px solid var(--warning-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.wrong-reason-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.wrong-reason-header label {
+  font-size: 0.88rem;
+  font-weight: 800;
+  color: #b45309;
+}
+
+.wrong-reason-status {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.wrong-reason-textarea {
+  width: 100%;
+  padding: 0.65rem 0.8rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid #fcd34d;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.wrong-reason-textarea:focus {
+  border-color: var(--warning);
+  box-shadow: 0 0 0 3px rgba(217, 119, 6, 0.15);
 }

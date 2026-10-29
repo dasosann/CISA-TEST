@@ -200,11 +200,17 @@ export default function App() {
     for (const id of solvedIds) {
       if (history[id]?.isCorrect) correctCount++;
     }
-    const unresolvedWrongIds = Object.keys(wrongNote).filter(
-      id => wrongNote[id] && !wrongNote[id].resolved
+  const unresolvedWrongIds = Object.keys(wrongNote).filter(
+      id =>
+        wrongNote[id] &&
+        !wrongNote[id].resolved &&
+        (wrongNote[id].wrongCount > 0 || Boolean(wrongNote[id].reason?.trim()))
     );
     const repeatedWrongIds = Object.keys(wrongNote).filter(
       id => wrongNote[id] && !wrongNote[id].resolved && wrongNote[id].wrongCount >= 2
+    );
+    const reasonIds = Object.keys(wrongNote).filter(id =>
+      Boolean(wrongNote[id]?.reason?.trim())
     );
     const bookmarkIds = Object.keys(bookmarks).filter(id => bookmarks[id]);
 
@@ -216,6 +222,7 @@ export default function App() {
       accuracyPct: solvedCount > 0 ? Math.round((correctCount / solvedCount) * 100) : 0,
       unresolvedWrongCount: unresolvedWrongIds.length,
       repeatedWrongCount: repeatedWrongIds.length,
+      reasonCount: reasonIds.length,
       bookmarkCount: bookmarkIds.length,
     };
   }, [questions.length, history, wrongNote, bookmarks]);
@@ -309,6 +316,7 @@ export default function App() {
             return {
               ...prev,
               [qId]: {
+                ...existing,
                 wrongCount: (existing?.wrongCount || 0) + 1,
                 lastWrongSelected: optionKey,
                 lastWrongAt: now,
@@ -359,6 +367,7 @@ export default function App() {
       if (!isCorrect) {
         const existing = newWrongNote[qId];
         newWrongNote[qId] = {
+          ...existing,
           wrongCount: (existing?.wrongCount || 0) + 1,
           lastWrongSelected: selected,
           lastWrongAt: now,
@@ -400,6 +409,27 @@ export default function App() {
     });
   }, []);
 
+  // Update Wrong Reason / Memo for a question
+  const handleUpdateWrongReason = useCallback((qId, reasonText) => {
+    const now = new Date().toISOString();
+    setWrongNote(prev => {
+      const existing = prev[qId];
+      if (!existing && !reasonText.trim()) return prev;
+      return {
+        ...prev,
+        [qId]: {
+          wrongCount: existing?.wrongCount || 0,
+          lastWrongSelected: existing?.lastWrongSelected || null,
+          lastWrongAt: existing?.lastWrongAt || now,
+          resolved: existing?.resolved ?? false,
+          ...existing,
+          reason: reasonText,
+          reasonUpdatedAt: now,
+        },
+      };
+    });
+  }, []);
+
   const removeWrongItem = useCallback(qId => {
     setWrongNote(prev => {
       const next = { ...prev };
@@ -408,58 +438,21 @@ export default function App() {
     });
   }, []);
 
-  // Keyboard navigation in Quiz tab
-  useEffect(() => {
-    if (activeTab !== 'quiz' || !currentQuestion) return;
-
-    const handleKeyDown = e => {
-      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
-
-      const key = e.key.toUpperCase();
-      const mapKey = { '1': 'A', '2': 'B', '3': 'C', '4': 'D', A: 'A', B: 'B', C: 'C', D: 'D' }[
-        key
-      ];
-
-      if (mapKey) {
-        const hasOpt = currentQuestion.optionsEn.some(o => o.key === mapKey);
-        if (hasOpt) {
-          e.preventDefault();
-          handleSelectOption(currentQuestion.id, mapKey);
-        }
-      } else if (e.key === 'ArrowRight') {
-        e.preventDefault();
-        setQuizSession(prev => ({
-          ...prev,
-          currentIndex: Math.min(prev.questionIds.length - 1, prev.currentIndex + 1),
-        }));
-      } else if (e.key === 'ArrowLeft') {
-        e.preventDefault();
-        setQuizSession(prev => ({
-          ...prev,
-          currentIndex: Math.max(0, prev.currentIndex - 1),
-        }));
-      } else if (key === 'S') {
-        e.preventDefault();
-        toggleBookmark(currentQuestion.id);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTab, currentQuestion, handleSelectOption, toggleBookmark]);
-
   // Filtered Wrong Note Questions
   const filteredWrongQuestions = useMemo(() => {
     const list = [];
     for (const q of questions) {
       const w = wrongNote[q.id];
       const isBookmarked = !!bookmarks[q.id];
+      const hasReason = Boolean(w?.reason?.trim());
 
       let matchesTab = false;
       if (wrongFilter === 'unresolved') {
-        matchesTab = !!w && !w.resolved;
+        matchesTab = !!w && !w.resolved && (w.wrongCount > 0 || hasReason);
       } else if (wrongFilter === 'repeated') {
         matchesTab = !!w && !w.resolved && w.wrongCount >= 2;
+      } else if (wrongFilter === 'has_reason') {
+        matchesTab = hasReason;
       } else if (wrongFilter === 'bookmarked') {
         matchesTab = isBookmarked;
       } else if (wrongFilter === 'resolved') {
@@ -475,8 +468,9 @@ export default function App() {
         const kw = wrongSearch.trim().toLowerCase();
         const inKo = q.questionKo.toLowerCase().includes(kw);
         const inEn = q.questionEn.toLowerCase().includes(kw);
+        const inReason = (w?.reason || '').toLowerCase().includes(kw);
         const inId = String(q.id) === kw.replace('#', '');
-        if (!inKo && !inEn && !inId) continue;
+        if (!inKo && !inEn && !inReason && !inId) continue;
       }
 
       list.push({
@@ -1227,7 +1221,6 @@ export default function App() {
                       color: bookmarks[currentQuestion.id] ? 'var(--warning)' : undefined,
                     }}
                     onClick={() => toggleBookmark(currentQuestion.id)}
-                    title="단축키: S"
                   >
                     <Star
                       size={15}
@@ -1243,11 +1236,9 @@ export default function App() {
                 <div
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: '0.5rem',
-                    flexWrap: 'wrap',
-                    padding: '0.5rem 0.85rem',
+                    flexDirection: 'column',
+                    gap: '0.45rem',
+                    padding: '0.6rem 0.85rem',
                     marginBottom: '1rem',
                     borderRadius: '8px',
                     background: wrongNote[currentQuestion.id].resolved
@@ -1261,27 +1252,53 @@ export default function App() {
                     fontSize: '0.82rem',
                   }}
                 >
-                  <span
+                  <div
                     style={{
-                      fontWeight: 700,
-                      color: wrongNote[currentQuestion.id].resolved
-                        ? 'var(--success)'
-                        : 'var(--danger)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.5rem',
+                      flexWrap: 'wrap',
                     }}
                   >
-                    {wrongNote[currentQuestion.id].resolved
-                      ? `✅ 오답 노트 졸업 완료 (이전 누적 오답 ${wrongNote[currentQuestion.id].wrongCount}회)`
-                      : `⚠️ 오답 노트 등록 문항 (누적 ${wrongNote[currentQuestion.id].wrongCount}회 틀림 · 마지막 오답: ${wrongNote[currentQuestion.id].lastWrongSelected})`}
-                  </span>
-                  <button
-                    className="btn btn-sm"
-                    style={{ padding: '0.2rem 0.55rem', fontSize: '0.76rem' }}
-                    onClick={() => toggleWrongResolved(currentQuestion.id)}
-                  >
-                    {wrongNote[currentQuestion.id].resolved
-                      ? '미해결 상태로 되돌리기'
-                      : '✅ 오답 노트 졸업(해결) 처리'}
-                  </button>
+                    <span
+                      style={{
+                        fontWeight: 700,
+                        color: wrongNote[currentQuestion.id].resolved
+                          ? 'var(--success)'
+                          : 'var(--danger)',
+                      }}
+                    >
+                      {wrongNote[currentQuestion.id].resolved
+                        ? `✅ 오답 노트 졸업 완료 (이전 누적 오답 ${wrongNote[currentQuestion.id].wrongCount}회)`
+                        : wrongNote[currentQuestion.id].wrongCount > 0
+                        ? `⚠️ 오답 노트 등록 문항 (누적 ${wrongNote[currentQuestion.id].wrongCount}회 틀림 · 마지막 오답: ${wrongNote[currentQuestion.id].lastWrongSelected})`
+                        : `📝 오답 이유 메모가 등록된 문항`}
+                    </span>
+                    <button
+                      className="btn btn-sm"
+                      style={{ padding: '0.2rem 0.55rem', fontSize: '0.76rem' }}
+                      onClick={() => toggleWrongResolved(currentQuestion.id)}
+                    >
+                      {wrongNote[currentQuestion.id].resolved
+                        ? '미해결 상태로 되돌리기'
+                        : '✅ 오답 노트 졸업(해결) 처리'}
+                    </button>
+                  </div>
+                  {wrongNote[currentQuestion.id].reason?.trim() && (
+                    <div
+                      style={{
+                        background: 'rgba(255, 255, 255, 0.75)',
+                        padding: '0.45rem 0.65rem',
+                        borderRadius: '6px',
+                        color: 'var(--text)',
+                        fontSize: '0.82rem',
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      <strong>📝 내가 적어둔 오답 이유:</strong> {wrongNote[currentQuestion.id].reason}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1330,7 +1347,7 @@ export default function App() {
                 )}
               </div>
 
-              {/* Options List */}
+              {/* Options List (Mouse Click Only) */}
               <div className="options-list">
                 {currentQuestion.optionsEn.map((optEn, idx) => {
                   const optKo = currentQuestion.optionsKo[idx] || optEn;
@@ -1360,6 +1377,9 @@ export default function App() {
                   return (
                     <button
                       key={key}
+                      type="button"
+                      tabIndex={-1}
+                      onKeyDown={e => e.preventDefault()}
                       className={itemClass}
                       onClick={() => handleSelectOption(currentQuestion.id, key)}
                     >
@@ -1404,7 +1424,7 @@ export default function App() {
                     }))
                   }
                 >
-                  <ChevronLeft size={16} /> 이전 문제 (←)
+                  <ChevronLeft size={16} /> 이전 문제
                 </button>
 
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -1442,7 +1462,7 @@ export default function App() {
                     }))
                   }
                 >
-                  다음 문제 (→) <ChevronRight size={16} />
+                  다음 문제 <ChevronRight size={16} />
                 </button>
               </div>
 
@@ -1515,6 +1535,28 @@ export default function App() {
                   )}
                 </div>
               )}
+
+              {/* Wrong Reason / Study Note Box (Always accessible in Quiz Card) */}
+              <div className="wrong-reason-box">
+                <div className="wrong-reason-header">
+                  <label htmlFor={`reason-input-${currentQuestion.id}`}>
+                    📝 오답 이유 / 나만의 복습 메모
+                  </label>
+                  <span className="wrong-reason-status">
+                    {wrongNote[currentQuestion.id]?.reason?.trim()
+                      ? '✓ 자동 저장됨 (오답 노트 및 검색에서 언제든 열람 가능)'
+                      : '작성 시 즉시 자동 저장되며 오답 노트에서 모아볼 수 있습니다'}
+                  </span>
+                </div>
+                <textarea
+                  id={`reason-input-${currentQuestion.id}`}
+                  className="wrong-reason-textarea"
+                  rows={3}
+                  placeholder="왜 틀렸는지, 헷갈린 선지나 핵심 개념(예: FIRST/MOST/PRIMARY 키워드 놓침, 용어 혼동 등)을 적어두세요..."
+                  value={wrongNote[currentQuestion.id]?.reason || ''}
+                  onChange={e => handleUpdateWrongReason(currentQuestion.id, e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Right Sidebar: Session Progress & Question Navigator */}
@@ -1612,25 +1654,6 @@ export default function App() {
                     </button>
                   );
                 })}
-              </div>
-
-              {/* Shortcut Guide */}
-              <div
-                style={{
-                  marginTop: '0.9rem',
-                  paddingTop: '0.75rem',
-                  borderTop: '1px solid var(--border)',
-                  fontSize: '0.75rem',
-                  color: 'var(--text-muted)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.2rem',
-                }}
-              >
-                <div>⌨️ <strong>단축키 안내</strong></div>
-                <div>• <code>1~4</code> 또는 <code>A~D</code> : 보기 선택</div>
-                <div>• <code>←</code> / <code>→</code> : 이전 / 다음 문항 이동</div>
-                <div>• <code>S</code> : 헷갈리는 문제 별표(북마크)</div>
               </div>
             </div>
           </div>
@@ -1730,6 +1753,10 @@ export default function App() {
                       label: `2회 이상 반복 오답 (${globalStats.repeatedWrongCount})`,
                     },
                     {
+                      id: 'has_reason',
+                      label: `📝 오답이유 작성됨 (${globalStats.reasonCount})`,
+                    },
+                    {
                       id: 'bookmarked',
                       label: `⭐ 북마크 (${globalStats.bookmarkCount})`,
                     },
@@ -1766,7 +1793,7 @@ export default function App() {
                   <input
                     type="text"
                     className="input"
-                    placeholder="오답 내 키워드/문항번호 검색..."
+                    placeholder="오답/오답이유 키워드, 문항번호 검색..."
                     value={wrongSearch}
                     onChange={e => setWrongSearch(e.target.value)}
                   />
@@ -1784,7 +1811,7 @@ export default function App() {
                 />
                 <h3 style={{ marginBottom: '0.35rem' }}>해당 조건의 오답/북마크 문항이 없습니다!</h3>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  평일 스케줄에 따라 문제를 풀고 틀리거나 별표(⭐)를 표시한 문항이 이곳에 자동으로 정리됩니다.
+                  평일 스케줄에 따라 문제를 풀고 틀리거나 오답 이유를 기록한 문항이 이곳에 자동으로 정리됩니다.
                 </p>
               </div>
             ) : (
@@ -1817,7 +1844,9 @@ export default function App() {
                         >
                           {wrongInfo.resolved
                             ? `졸업 완료 (오답 ${wrongInfo.wrongCount}회)`
-                            : `오답 ${wrongInfo.wrongCount}회 누적`}
+                            : wrongInfo.wrongCount > 0
+                            ? `오답 ${wrongInfo.wrongCount}회 누적`
+                            : '메모 등록'}
                         </span>
                       )}
                       {wrongInfo?.lastWrongSelected && (
@@ -1933,6 +1962,7 @@ export default function App() {
                         borderRadius: '8px',
                         fontSize: '0.85rem',
                         border: '1px solid var(--border)',
+                        marginBottom: '0.75rem',
                       }}
                     >
                       {q.explanationKo && (
@@ -1947,6 +1977,26 @@ export default function App() {
                       )}
                     </div>
                   )}
+
+                  {/* Wrong Reason View / Edit Box in Wrong Note Card */}
+                  <div className="wrong-reason-box">
+                    <div className="wrong-reason-header">
+                      <label htmlFor={`wrong-card-reason-${q.id}`}>
+                        📝 오답 이유 / 복습 메모
+                      </label>
+                      <span className="wrong-reason-status">
+                        {wrongInfo?.reason?.trim() ? '✓ 저장됨' : '오답 이유를 기록해 두세요'}
+                      </span>
+                    </div>
+                    <textarea
+                      id={`wrong-card-reason-${q.id}`}
+                      className="wrong-reason-textarea"
+                      rows={2}
+                      placeholder="이 문제를 틀린 이유나 핵심 포인트를 입력하면 자동 저장됩니다..."
+                      value={wrongInfo?.reason || ''}
+                      onChange={e => handleUpdateWrongReason(q.id, e.target.value)}
+                    />
+                  </div>
                 </div>
               ))
             )}
@@ -2053,6 +2103,23 @@ export default function App() {
                   <div style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
                     {q.questionEn}
                   </div>
+                  {wrongNote[q.id]?.reason?.trim() && (
+                    <div
+                      style={{
+                        marginTop: '0.6rem',
+                        padding: '0.5rem 0.75rem',
+                        borderRadius: '8px',
+                        background: 'var(--warning-soft)',
+                        border: '1px solid var(--warning-border)',
+                        fontSize: '0.83rem',
+                        color: 'var(--text)',
+                        whiteSpace: 'pre-wrap',
+                      }}
+                    >
+                      <strong style={{ color: 'var(--warning)' }}>📝 내 오답 이유:</strong>{' '}
+                      {wrongNote[q.id].reason}
+                    </div>
+                  )}
                 </div>
               ))}
 
